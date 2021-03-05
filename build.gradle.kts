@@ -35,4 +35,16 @@ tasks.jar {
     configurations["compileClasspath"].forEach { file: File ->
         from(zipTree(file.absoluteFile))
     }
+
+  doLast {
+    val binaryFile = File(buildDir, "libs/${base.archivesBaseName}-$version-binary.jar").run {
+      parentFile.mkdirs()
+      delete()
+      appendText("#!/bin/sh\n\nexec java \$JAVA_OPTS -jar \$0 \"\$@\"\n\n")
+      appendBytes(archiveFile.get().asFile.inputStream().readBytes())
+
+      setExecutable(true)
+    }
+  }
 }
+

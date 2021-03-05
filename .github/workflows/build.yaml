@@ -24,7 +24,7 @@ jobs:
       - uses: actions/upload-artifact@v2
         with:
           name: beeline-latest-binary.jar
-          path: beeline/build/libs/beeline-*-binary.jar
+          path: build/libs/beeline-*-binary.jar
           if-no-files-found: error
 
       #- run: ./gradlew uploadArchives
@@ -43,7 +43,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           body: ${{ steps.release_notes.outputs.release_notes }}
-          files: beeline/build/libs/beeline-*-binary.jar
+          files: build/libs/beeline-*-binary.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -55,7 +55,7 @@ jobs:
       - name: Set SHA
         id: shasum
         if: startsWith(github.ref, 'refs/tags/')
-        run: echo ::set-output name=sha::"$(shasum -a 256 beeline/build/libs/beeline-*-binary.jar | awk '{printf $1}')"
+        run: echo ::set-output name=sha::"$(shasum -a 256 build/libs/beeline-*-binary.jar | awk '{printf $1}')"
 
       - name: Bump Brew
         if: startsWith(github.ref, 'refs/tags/')

@@ -30,6 +30,7 @@ tasks.withType<KotlinCompile>() {
 tasks.jar {
     manifest {
         attributes["Main-Class"] = "BeelineKt"
+        attributes["Implementation-Version"] = archiveVersion
     }
     configurations["compileClasspath"].forEach { file: File ->
         from(zipTree(file.absoluteFile))

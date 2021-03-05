@@ -1,4 +1,6 @@
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.NoOpCliktCommand
+import com.github.ajalt.clikt.core.PrintMessage
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.output.CliktHelpFormatter
 import com.github.ajalt.clikt.output.HelpFormatter
@@ -40,7 +42,6 @@ class BeelineCommand: CliktCommand(help = """
   }
 
   private val input by option("-c", "--cidr", help = "Comma-separated CIDR list, eg. 10.0.0.0/12,192.168.0.0/16").split(",").required()
-//  private val output by option(help="Output format").choice("table", "code").default("table")
   private val format by option("-f", "--format", help="""
     Custom format template. You can use %cidr, %prefix, %lowAddr and %highAddr to insert the CIDR address, CIDR prefix,
     the low and high addresses of the range respectively.
@@ -182,7 +183,12 @@ class BeelineCommand: CliktCommand(help = """
   }
 }
 
-fun main(args: Array<String>) = BeelineCommand().main(args)
+fun main(args: Array<String>) {
+  val version = NoOpCliktCommand::class.java.`package`.implementationVersion
+  BeelineCommand()
+    .versionOption(version)
+    .main(args)
+}
 
 private fun createBitFlipMask(prefix: Int): Int {
   assert(prefix in 0..7) { "Prefix out of range" }

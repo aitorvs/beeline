@@ -49,26 +49,6 @@ class Subnet {
   }
 
   /**
-   * Returns `true` if the return value of [SubnetInfo.addressCount]
-   * includes the network and broadcast addresses.
-   * @since 2.2
-   * @return true if the hostcount includes the network and broadcast addresses
-   */
-//  fun isInclusiveHostCount(): Boolean {
-//    return inclusiveHostCount
-//  }
-
-  /**
-   * Set to `true` if you want the return value of [SubnetInfo.addressCount]
-   * to include the network and broadcast addresses.
-   * @param inclusiveHostCount true if network and broadcast addresses are to be included
-   * @since 2.2
-   */
-//  fun setInclusiveHostCount(inclusiveHostCount: Boolean) {
-//    this.inclusiveHostCount = inclusiveHostCount
-//  }
-
-  /**
    * Convenience container for subnet summary information.
    *
    */
@@ -99,6 +79,10 @@ class Subnet {
      */
     fun isInRange(address: String): Boolean {
       return isInRange(toInteger(address))
+    }
+
+    fun overlaps(other: Subnet.SubnetInfo): Boolean {
+      return this.lowAddress.normalizeAddress() <= other.highAddress.normalizeAddress() && other.lowAddress.normalizeAddress() <= this.highAddress.normalizeAddress()
     }
 
     /**
@@ -146,6 +130,12 @@ class Subnet {
     val highAddress: String
       get() = format(toArray(high()))
 
+    val cidrPrefix: String
+      get() = cidrSignature.split("/")[1]
+
+    val cidrAddress: String
+      get() = cidrSignature.split("/")[0]
+
     /**
      * Get the count of available addresses.
      * Will be zero for CIDR/31 and CIDR/32 if the inclusive flag is false.
@@ -174,6 +164,10 @@ class Subnet {
       val n = networkLong()
       val count = b - n + if (isInclusiveHostCount) 1 else -1
       return if (count < 0) 0 else count
+    }
+
+    fun toArray(): IntArray {
+      return toArray(asInteger(getAddress()))
     }
 
     fun asInteger(address: String): Int {
@@ -230,8 +224,8 @@ class Subnet {
     get() =  SubnetInfo()
 
   /*
-     * Initialize the internal fields from the supplied CIDR mask
-     */
+   * Initialize the internal fields from the supplied CIDR mask
+   */
   private fun calculate(mask: String) {
     val matcher = cidrPattern.matcher(mask)
     if (matcher.matches()) {
@@ -252,8 +246,8 @@ class Subnet {
   }
 
   /*
-     * Convert a dotted decimal format address to a packed integer format
-     */
+   * Convert a dotted decimal format address to a packed integer format
+   */
   private fun toInteger(address: String): Int {
     val matcher = addressPattern.matcher(address)
     return if (matcher.matches()) {
@@ -264,9 +258,9 @@ class Subnet {
   }
 
   /*
-     * Convenience method to extract the components of a dotted decimal address and
-     * pack into an integer using a regex match
-     */
+   * Convenience method to extract the components of a dotted decimal address and
+   * pack into an integer using a regex match
+   */
   private fun matchAddress(matcher: Matcher): Int {
     var addr = 0
     for (i in 1..4) {
@@ -277,35 +271,10 @@ class Subnet {
   }
 
   /*
-     * Convert a packed integer address into a 4-element array
-     */
-  private fun toArray(`val`: Int): IntArray {
-    val ret = IntArray(4)
-    for (j in 3 downTo 0) {
-      ret[j] = ret[j] or (`val` ushr 8 * (3 - j) and 0xff)
-    }
-    return ret
-  }
-
-  /*
-     * Convert a 4-element array into dotted decimal format
-     */
-  private fun format(octets: IntArray): String {
-    val str = StringBuilder()
-    for (i in octets.indices) {
-      str.append(octets[i])
-      if (i != octets.size - 1) {
-        str.append(".")
-      }
-    }
-    return str.toString()
-  }
-
-  /*
-     * Convenience function to check integer boundaries.
-     * Checks if a value x is in the range [begin,end].
-     * Returns x if it is in range, throws an exception otherwise.
-     */
+   * Convenience function to check integer boundaries.
+   * Checks if a value x is in the range [begin,end].
+   * Returns x if it is in range, throws an exception otherwise.
+   */
   private fun rangeCheck(value: Int, begin: Int, end: Int): Int {
     if (value in begin..end) { // (begin,end]
       return value
@@ -343,5 +312,35 @@ class Subnet {
     private const val NBITS = 32
     /* Mask to convert unsigned int to a long (i.e. keep 32 bits) */
     private const val UNSIGNED_INT_MASK = 0x0FFFFFFFFL
+
+
+    internal fun addressFromInteger(address: Int): String {
+      return format(toArray(address))
+    }
+
+    /**
+     * Convert a packed integer address into a 4-element array
+     */
+    private fun toArray(`val`: Int): IntArray {
+      val ret = IntArray(4)
+      for (j in 3 downTo 0) {
+        ret[j] = ret[j] or (`val` ushr 8 * (3 - j) and 0xff)
+      }
+      return ret
+    }
+
+    /**
+     * Convert a 4-element array into dotted decimal format
+     */
+    private fun format(octets: IntArray): String {
+      val str = StringBuilder()
+      for (i in octets.indices) {
+        str.append(octets[i])
+        if (i != octets.size - 1) {
+          str.append(".")
+        }
+      }
+      return str.toString()
+    }
   }
 }

@@ -1,6 +1,6 @@
+import Subnet.Companion.addressFromInteger
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.NoOpCliktCommand
-import com.github.ajalt.clikt.core.PrintMessage
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.output.CliktHelpFormatter
 import com.github.ajalt.clikt.output.HelpFormatter
@@ -60,7 +60,7 @@ class BeelineCommand: CliktCommand(help = """
       echo("Calculating routes for ${util.info.cidrSignature}")
       val baseMask = 0b10000000
 
-      for (p in 0 until util.info.cidrPrefix().toInt()) {
+      for (p in 0 until util.info.cidrPrefix.toInt()) {
         val bitIndex = p / 8
         val prefix = p % 8
         val flipPos = (baseMask shr prefix) and 0xFF
@@ -71,7 +71,7 @@ class BeelineCommand: CliktCommand(help = """
         val route = formatRoute(subnet, bitIndex, result, p + 1)
 
         // check if route address already exist, if it does, take the most restrictive one, aka. the one with bigger yy
-        val yy = route.info.cidrPrefix().toInt()
+        val yy = route.info.cidrPrefix.toInt()
         val hit = routes[route.info.getAddress()]
         if (hit == null || yy > hit) {
           routes[route.info.getAddress()] = yy
@@ -94,8 +94,8 @@ class BeelineCommand: CliktCommand(help = """
 
     // Route(val address: String, val maskWidth: Int, val lowAddress: String, val highAddress: String)
     routes.addZeroZeroZeroZero().map { it.info }.zipWithNext().forEach {
-      val templated = format.replace("%cidr", it.first.cidrAddress())
-        .replace("%prefix", it.first.cidrPrefix())
+      val templated = format.replace("%cidr", it.first.cidrAddress)
+        .replace("%prefix", it.first.cidrPrefix)
         .replace("%lowAddr", it.first.lowAddress)
         .replace("%highAddr", it.first.highAddress)
       println(templated)
@@ -164,7 +164,7 @@ class BeelineCommand: CliktCommand(help = """
     var routeAddressCount = 0L
     val allAddressCount = calPower(2, 32)
     for (subnet in subnets) {
-      subnetAddressCount += calPower(2, 32 - subnet.info.cidrPrefix().toInt())
+      subnetAddressCount += calPower(2, 32 - subnet.info.cidrPrefix.toInt())
       for (route in routes) {
         if (subnet.info.overlaps(route.info)) {
           println("Subnet ${subnet.info.cidrSignature} found route ${route.info.cidrSignature}...removing route")
@@ -175,7 +175,7 @@ class BeelineCommand: CliktCommand(help = """
 
     return routes.toMutableList().apply { removeAll(removals) }.also {
       it.forEach { route ->
-        routeAddressCount += calPower(2, 32 - route.info.cidrPrefix().toInt())
+        routeAddressCount += calPower(2, 32 - route.info.cidrPrefix.toInt())
       }
 
       assert((routeAddressCount + subnetAddressCount - allAddressCount) == 0L) { "Invalid routes" }

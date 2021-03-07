@@ -9,6 +9,7 @@ import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.rendering.TextStyles
 import com.jakewharton.picnic.TextAlignment
 import com.jakewharton.picnic.table
+import kotlin.math.log2
 
 private inline fun assert(value: Boolean, lazyMessage: () -> Any) {
   if (!value) {
@@ -17,9 +18,7 @@ private inline fun assert(value: Boolean, lazyMessage: () -> Any) {
   }
 }
 
-private fun calPower(baseValue: Int, powerValue: Int): Long {
-  return if (powerValue != 0)  baseValue * calPower(baseValue, powerValue - 1) else 1
-}
+data class Beeline(val route: Subnet, val isGap: Boolean = false)
 
 class ColorHelpFormatter : CliktHelpFormatter() {
   override fun renderTag(tag: String, value: String) = TextColors.green(super.renderTag(tag, value))
@@ -30,6 +29,7 @@ class ColorHelpFormatter : CliktHelpFormatter() {
   override fun optionMetavar(option: HelpFormatter.ParameterHelp.Option) = TextColors.green(super.optionMetavar(option))
 }
 
+@ExperimentalUnsignedTypes
 class BeelineCommand: CliktCommand(help = """
   This script, given a list of subnets, finds all network routes that excludes given subnets.
 
@@ -51,11 +51,37 @@ class BeelineCommand: CliktCommand(help = """
   private val showGaps by option(help="Show gaps in table").flag()
 
   override fun run() {
-    val routes: MutableMap<String, Int> = mutableMapOf()
-
     val subnets = input.map { Subnet("${it.split("/")[0].trim()}/${it.split("/")[1].trim()}").apply { isInclusiveHostCount = true } }.toList()
 
-    subnets.forEach { util ->
+    val routes = calculateSubnetRoutes(subnets)
+    val finalRoutes = mergeRoutes(subnets, routes)
+//    verifyRoutes(subnets, finalRoutes)
+    val gaps = if (showGaps) calculateGaps(finalRoutes) else listOf()
+
+    val beelines = finalRoutes.map { Beeline(it) }
+    val beelineGaps = gaps.map { Beeline(it, true) }
+
+    // merge routes and gaps
+    val result = beelines.toMutableList().apply {
+      addAll(beelineGaps)
+      sortBy { it.route.info.lowAddress.normalizeAddress() }
+    }.toList()
+
+    outputRoutes(result, format)
+  }
+
+  private fun verifyRoutes(subnets: List<Subnet>, routes: List<Subnet>) {
+    val subnetAddrCount = subnets.map { it.info.getAddressCountLong() }.sum()
+    val routeAddrCount = routes.map { it.info.getAddressCountLong() }.sum()
+
+    assert((routeAddrCount + subnetAddrCount - UInt.MAX_VALUE.toLong() - 1) == 0L) { "Invalid routes" }
+  }
+
+
+  private fun calculateSubnetRoutes(exclusions: List<Subnet>): List<Subnet> {
+    val routes: MutableMap<String, Int> = mutableMapOf()
+
+    exclusions.forEach { util ->
       val subnet = util.info.toArray()
       echo("Calculating routes for ${util.info.cidrSignature}")
       val baseMask = 0b10000000
@@ -79,38 +105,48 @@ class BeelineCommand: CliktCommand(help = """
       }
     }
 
-    val finalRoutes = verify(subnets, routes.toSubnetUtils())
-
-    outputRoutes(finalRoutes, format, showGaps)
+    return routes.toSubnet()
   }
 
-  private fun outputRoutes(finalRoutes: List<Subnet>, format: String?, showGaps: Boolean) {
-    if (format == null) outputTableRoutes(finalRoutes, showGaps)
-    else outputCodeRoutes(finalRoutes, format, showGaps)
+  private fun calculateGaps(routes: List<Subnet>): List<Subnet> {
+    val gaps = mutableListOf<Subnet>()
+    routes.addZeroZeroZeroZero().map { it.info }.zipWithNext().forEach {
+      findGaps(it.first, it.second)?.let { _ ->
+        val mask = (it.first.asInteger(it.first.highAddress) + 1) xor (it.second.asInteger(it.second.lowAddress) - 1)
+        val prefix = if (mask == 0) 0 else log2(mask.toDouble()) + 1
+        val address = addressFromInteger(it.first.asInteger(it.first.highAddress) + 1)
+        gaps.add(Subnet("${address}/${32-prefix.toInt()}"))
+      }
+    }
+
+    return gaps
   }
 
-  private fun outputCodeRoutes(routes: List<Subnet>, format: String, showGaps: Boolean) {
+  private fun outputRoutes(finalRoutes: List<Beeline>, format: String?) {
+    if (format == null) outputTableRoutes(finalRoutes)
+    else outputCodeRoutes(finalRoutes, format)
+  }
+
+  private fun outputCodeRoutes(routes: List<Beeline>, format: String) {
     println()
 
-    // Route(val address: String, val maskWidth: Int, val lowAddress: String, val highAddress: String)
-    routes.addZeroZeroZeroZero().map { it.info }.zipWithNext().forEach {
-      val templated = format.replace("%cidr", it.first.cidrAddress)
-        .replace("%prefix", it.first.cidrPrefix)
-        .replace("%lowAddr", it.first.lowAddress)
-        .replace("%highAddr", it.first.highAddress)
-      println(templated)
-
-      if (showGaps) {
-        findGaps(it.first, it.second)?.let { gap ->
-          println("""
-            // Excluded range: ${gap.first} -> ${gap.second}
+    routes.forEach {
+      if (it.isGap) {
+        println("""
+            // Excluded range: ${it.route.info.lowAddress} -> ${it.route.info.highAddress}
           """.trimIndent())
-        }
+      } else {
+
+        val templated = format.replace("%cidr", it.route.info.cidrAddress)
+          .replace("%prefix", it.route.info.cidrPrefix)
+          .replace("%lowAddr", it.route.info.lowAddress)
+          .replace("%highAddr", it.route.info.highAddress)
+        println(templated)
       }
     }
   }
 
-  private fun outputTableRoutes(routes: List<Subnet>, showGaps: Boolean) {
+  private fun outputTableRoutes(routes: List<Beeline>) {
     println()
 
     println(
@@ -122,19 +158,17 @@ class BeelineCommand: CliktCommand(help = """
           paddingRight = 1
         }
         row(TextStyles.bold("CIDR"), TextStyles.bold("Low Address"), TextStyles.bold("High Address"))
-        routes.addZeroZeroZeroZero().map { it.info }.zipWithNext().forEach {
+        routes.forEach {
 
-          row(it.first.cidrSignature, it.first.lowAddress, it.first.highAddress)
-
-          if (showGaps) {
-            findGaps(it.first, it.second)?.let {
-              row {
-                cell(TextColors.red("${it.first} -> ${it.second}")) {
-                  alignment = TextAlignment.MiddleCenter
-                  columnSpan = 3
-                }
+          if (it.isGap) {
+            row {
+              cell(TextColors.red("${it.route.info.lowAddress} -> ${it.route.info.highAddress}")) {
+                alignment = TextAlignment.MiddleCenter
+                columnSpan = 3
               }
             }
+          } else {
+            row(it.route.info.cidrSignature, it.route.info.lowAddress, it.route.info.highAddress)
           }
         }
       }
@@ -153,18 +187,14 @@ class BeelineCommand: CliktCommand(help = """
     return null
   }
 
-  private fun verify(subnets: List<Subnet>, routes: List<Subnet>): List<Subnet> {
+  private fun mergeRoutes(subnets: List<Subnet>, routes: List<Subnet>): List<Subnet> {
     println()
     println("Verifying routes...")
 
     if (subnets.isEmpty()) return routes
 
     val removals: MutableList<Subnet> = mutableListOf()
-    var subnetAddressCount = 0L
-    var routeAddressCount = 0L
-    val allAddressCount = calPower(2, 32)
     for (subnet in subnets) {
-      subnetAddressCount += calPower(2, 32 - subnet.info.cidrPrefix.toInt())
       for (route in routes) {
         if (subnet.info.overlaps(route.info)) {
           println("Subnet ${subnet.info.cidrSignature} found route ${route.info.cidrSignature}...removing route")
@@ -173,13 +203,7 @@ class BeelineCommand: CliktCommand(help = """
       }
     }
 
-    return routes.toMutableList().apply { removeAll(removals) }.also {
-      it.forEach { route ->
-        routeAddressCount += calPower(2, 32 - route.info.cidrPrefix.toInt())
-      }
-
-      assert((routeAddressCount + subnetAddressCount - allAddressCount) == 0L) { "Invalid routes" }
-    }
+    return routes.toMutableList().apply { removeAll(removals) }
   }
 }
 

@@ -48,6 +48,10 @@ class Subnet {
     calculate(toCidrNotation(address, mask))
   }
 
+  override fun toString(): String {
+    return info.toString()
+  }
+
   /**
    * Convenience container for subnet summary information.
    *

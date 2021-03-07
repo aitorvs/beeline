@@ -8,7 +8,7 @@ internal fun String.normalizeAddress(): String {
   )
 }
 
-internal fun MutableMap<String, Int>.toSubnetUtils(): List<Subnet> {
+internal fun MutableMap<String, Int>.toSubnet(): List<Subnet> {
   return this.asSequence()
     .map { Subnet("${it.key}/${it.value}").apply { isInclusiveHostCount = true } }
     .toList()

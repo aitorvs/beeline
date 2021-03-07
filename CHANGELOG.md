@@ -1,7 +1,12 @@
 # Change Log
 
 ## [Unreleased]
-[Unreleased]: https://github.com/aitorvs/beeline/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/aitorvs/beeline/compare/0.4.0...HEAD
+
+## [0.3.0] - 2021-03-07
+[0.3.0]: https://github.com/aitorvs/beeline/releases/tag/0.3.0
+
+- Fixed issue with routing table verification
 
 ## [0.2.0] - 2021-03-05
 [0.2.0]: https://github.com/aitorvs/beeline/releases/tag/0.2.0

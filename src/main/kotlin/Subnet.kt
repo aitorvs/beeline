@@ -15,8 +15,15 @@
  * limitations under the License.
  */
 
+import Subnet.Companion.toInteger
 import java.util.regex.Matcher
 import java.util.regex.Pattern
+
+inline class Address(val value: String)
+
+internal fun Address.asInteger(): Int {
+  return toInteger(this)
+}
 
 class Subnet {
   private var netmask = 0
@@ -45,7 +52,7 @@ class Subnet {
    * i.e. does not match n.n.n.n where n=1-3 decimal digits and the mask is not all zeros
    */
   constructor(address: String, mask: String) {
-    calculate(toCidrNotation(address, mask))
+    calculate(toCidrNotation(Address(address), Address(mask)))
   }
 
   override fun toString(): String {
@@ -81,7 +88,7 @@ class Subnet {
      * @param address A dot-delimited IPv4 address, e.g. "192.168.0.1"
      * @return True if in range, false otherwise
      */
-    fun isInRange(address: String): Boolean {
+    fun isInRange(address: Address): Boolean {
       return isInRange(toInteger(address))
     }
 
@@ -102,17 +109,17 @@ class Subnet {
       return addLong in lowLong..highLong
     }
 
-    val broadcastAddress: String
+    val broadcastAddress: Address
       get() = format(toArray(broadcast))
 
-    val networkAddress: String
+    val networkAddress: Address
       get() = format(toArray(network))
 
-    fun getNetmask(): String {
+    fun getNetmask(): Address {
       return format(toArray(netmask))
     }
 
-    fun getAddress(): String {
+    fun getAddress(): Address {
       return format(toArray(address))
     }
 
@@ -122,7 +129,7 @@ class Subnet {
      *
      * @return the IP address in dotted format, may be "0.0.0.0" if there is no valid address
      */
-    val lowAddress: String
+    val lowAddress: Address
       get() = format(toArray(low()))
 
     /**
@@ -131,7 +138,7 @@ class Subnet {
      *
      * @return the IP address in dotted format, may be "0.0.0.0" if there is no valid address
      */
-    val highAddress: String
+    val highAddress: Address
       get() = format(toArray(high()))
 
     val cidrPrefix: String
@@ -174,10 +181,6 @@ class Subnet {
       return toArray(asInteger(getAddress()))
     }
 
-    fun asInteger(address: String): Int {
-      return toInteger(address)
-    }
-
     val cidrSignature: String
       get() {
         return toCidrNotation(
@@ -186,10 +189,10 @@ class Subnet {
         )
       }
 
-    val allAddresses: Array<String?>
+    val allAddresses: Array<Address?>
       get() {
         val ct = addressCount
-        val addresses = arrayOfNulls<String>(ct)
+        val addresses = arrayOfNulls<Address>(ct)
         if (ct == 0) {
           return addresses
         }
@@ -250,43 +253,6 @@ class Subnet {
   }
 
   /*
-   * Convert a dotted decimal format address to a packed integer format
-   */
-  private fun toInteger(address: String): Int {
-    val matcher = addressPattern.matcher(address)
-    return if (matcher.matches()) {
-      matchAddress(matcher)
-    } else {
-      throw IllegalArgumentException("Could not parse [$address]")
-    }
-  }
-
-  /*
-   * Convenience method to extract the components of a dotted decimal address and
-   * pack into an integer using a regex match
-   */
-  private fun matchAddress(matcher: Matcher): Int {
-    var addr = 0
-    for (i in 1..4) {
-      val n = rangeCheck(matcher.group(i).toInt(), 0, 255)
-      addr = addr or (n and 0xff shl 8 * (4 - i))
-    }
-    return addr
-  }
-
-  /*
-   * Convenience function to check integer boundaries.
-   * Checks if a value x is in the range [begin,end].
-   * Returns x if it is in range, throws an exception otherwise.
-   */
-  private fun rangeCheck(value: Int, begin: Int, end: Int): Int {
-    if (value in begin..end) { // (begin,end]
-      return value
-    }
-    throw IllegalArgumentException("Value [$value] not in range [$begin,$end]")
-  }
-
-  /*
      * Count the number of 1-bits in a 32-bit integer using a divide-and-conquer strategy
      * see Hacker's Delight section 5.1
      */
@@ -304,8 +270,8 @@ class Subnet {
      * by counting the 1-bit population in the mask address. (It may be better to count
      * NBITS-#trailing zeroes for this case)
      */
-  private fun toCidrNotation(addr: String, mask: String): String {
-    return addr + "/" + pop(toInteger(mask))
+  private fun toCidrNotation(addr: Address, mask: Address): String {
+    return addr.value + "/" + pop(toInteger(mask))
   }
 
   companion object {
@@ -318,7 +284,7 @@ class Subnet {
     private const val UNSIGNED_INT_MASK = 0x0FFFFFFFFL
 
 
-    internal fun addressFromInteger(address: Int): String {
+    internal fun addressFromInteger(address: Int): Address {
       return format(toArray(address))
     }
 
@@ -336,7 +302,7 @@ class Subnet {
     /**
      * Convert a 4-element array into dotted decimal format
      */
-    private fun format(octets: IntArray): String {
+    private fun format(octets: IntArray): Address {
       val str = StringBuilder()
       for (i in octets.indices) {
         str.append(octets[i])
@@ -344,7 +310,48 @@ class Subnet {
           str.append(".")
         }
       }
-      return str.toString()
+      return Address(str.toString())
+    }
+
+    private fun asInteger(address: Address): Int {
+      return toInteger(address)
+    }
+
+    /*
+     * Convenience function to check integer boundaries.
+     * Checks if a value x is in the range [begin,end].
+     * Returns x if it is in range, throws an exception otherwise.
+     */
+    private fun rangeCheck(value: Int, begin: Int, end: Int): Int {
+      if (value in begin..end) { // (begin,end]
+        return value
+      }
+      throw IllegalArgumentException("Value [$value] not in range [$begin,$end]")
+    }
+
+    /*
+     * Convenience method to extract the components of a dotted decimal address and
+     * pack into an integer using a regex match
+     */
+    private fun matchAddress(matcher: Matcher): Int {
+      var addr = 0
+      for (i in 1..4) {
+        val n = rangeCheck(matcher.group(i).toInt(), 0, 255)
+        addr = addr or (n and 0xff shl 8 * (4 - i))
+      }
+      return addr
+    }
+
+    /*
+     * Convert a dotted decimal format address to a packed integer format
+     */
+    internal fun toInteger(address: Address): Int {
+      val matcher = addressPattern.matcher(address.value)
+      return if (matcher.matches()) {
+        matchAddress(matcher)
+      } else {
+        throw IllegalArgumentException("Could not parse [$address]")
+      }
     }
   }
 }

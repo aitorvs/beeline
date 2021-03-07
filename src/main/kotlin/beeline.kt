@@ -72,12 +72,12 @@ class BeelineCommand: CliktCommand(help = """
   private fun verifyRoutes(routes: List<Beeline>) {
     val routeAddrCount = routes.map { it.route.info.getAddressCountLong() }.sum()
 
-    assert((routeAddrCount - UInt.MAX_VALUE.toLong() - 1) == 0L) { "Invalid routes" }
+    assert((routeAddrCount - UInt.MAX_VALUE.toLong() - 1) == 0L) { "Invalid routes $routeAddrCount != ${UInt.MAX_VALUE.toLong() - 1}" }
   }
 
 
   private fun calculateSubnetRoutes(exclusions: List<Subnet>): List<Subnet> {
-    val routes: MutableMap<String, Int> = mutableMapOf()
+    val routes: MutableMap<Address, Int> = mutableMapOf()
 
     exclusions.forEach { util ->
       val subnet = util.info.toArray()
@@ -110,10 +110,10 @@ class BeelineCommand: CliktCommand(help = """
     val gaps = mutableListOf<Subnet>()
     routes.addZeroZeroZeroZero().map { it.info }.zipWithNext().forEach {
       findGaps(it.first, it.second)?.let { _ ->
-        val mask = (it.first.asInteger(it.first.highAddress) + 1) xor (it.second.asInteger(it.second.lowAddress) - 1)
+        val mask = (it.first.highAddress.asInteger() + 1) xor (it.second.lowAddress.asInteger() - 1)
         val prefix = if (mask == 0) 0 else log2(mask.toDouble()) + 1
-        val address = addressFromInteger(it.first.asInteger(it.first.highAddress) + 1)
-        gaps.add(Subnet("${address}/${32-prefix.toInt()}"))
+        val address = addressFromInteger(it.first.highAddress.asInteger() + 1)
+        gaps.add(Subnet("${address.value}/${32-prefix.toInt()}"))
       }
     }
 
@@ -137,8 +137,8 @@ class BeelineCommand: CliktCommand(help = """
 
         val templated = format.replace("%cidr", it.route.info.cidrAddress)
           .replace("%prefix", it.route.info.cidrPrefix)
-          .replace("%lowAddr", it.route.info.lowAddress)
-          .replace("%highAddr", it.route.info.highAddress)
+          .replace("%lowAddr", it.route.info.lowAddress.value)
+          .replace("%highAddr", it.route.info.highAddress.value)
         println(templated)
       }
     }
@@ -160,23 +160,23 @@ class BeelineCommand: CliktCommand(help = """
 
           if (it.isGap) {
             row {
-              cell(TextColors.red("${it.route.info.lowAddress} -> ${it.route.info.highAddress}")) {
+              cell(TextColors.red("${it.route.info.lowAddress.value} -> ${it.route.info.highAddress.value}")) {
                 alignment = TextAlignment.MiddleCenter
                 columnSpan = 3
               }
             }
           } else {
-            row(it.route.info.cidrSignature, it.route.info.lowAddress, it.route.info.highAddress)
+            row(it.route.info.cidrSignature, it.route.info.lowAddress.value, it.route.info.highAddress.value)
           }
         }
       }
     )
   }
 
-  private fun findGaps(first: Subnet.SubnetInfo, second: Subnet.SubnetInfo): Pair<String, String>? {
-    val highestFromCurrentRoute = first.asInteger(first.highAddress)
+  private fun findGaps(first: Subnet.SubnetInfo, second: Subnet.SubnetInfo): Pair<Address, Address>? {
+    val highestFromCurrentRoute = first.highAddress.asInteger()
     val expectedNextAddress = highestFromCurrentRoute + 1
-    val lowestFromNextRoute = second.asInteger(second.lowAddress)
+    val lowestFromNextRoute = second.lowAddress.asInteger()
 
     if (lowestFromNextRoute != expectedNextAddress) {
       return addressFromInteger(expectedNextAddress) to addressFromInteger(lowestFromNextRoute - 1)

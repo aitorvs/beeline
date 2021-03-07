@@ -1,16 +1,16 @@
-internal fun String.normalizeAddress(): String {
+internal fun Address.normalizeAddress(): String {
   return String.format(
     "%s.%s.%s.%s",
-    split(".")[0].padStart(3, '0'),
-    split(".")[1].padStart(3, '0'),
-    split(".")[2].padStart(3, '0'),
-    split(".")[3].padStart(3, '0')
+    value.split(".")[0].padStart(3, '0'),
+    value.split(".")[1].padStart(3, '0'),
+    value.split(".")[2].padStart(3, '0'),
+    value.split(".")[3].padStart(3, '0')
   )
 }
 
-internal fun MutableMap<String, Int>.toSubnet(): List<Subnet> {
+internal fun MutableMap<Address, Int>.toSubnet(): List<Subnet> {
   return this.asSequence()
-    .map { Subnet("${it.key}/${it.value}").apply { isInclusiveHostCount = true } }
+    .map { Subnet("${it.key.value}/${it.value}").apply { isInclusiveHostCount = true } }
     .toList()
     .sortedBy { it.info.getAddress().normalizeAddress() }
 }

@@ -55,7 +55,6 @@ class BeelineCommand: CliktCommand(help = """
 
     val routes = calculateSubnetRoutes(subnets)
     val finalRoutes = mergeRoutes(subnets, routes)
-//    verifyRoutes(subnets, finalRoutes)
     val gaps = if (showGaps) calculateGaps(finalRoutes) else listOf()
 
     val beelines = finalRoutes.map { Beeline(it) }
@@ -65,16 +64,15 @@ class BeelineCommand: CliktCommand(help = """
     val result = beelines.toMutableList().apply {
       addAll(beelineGaps)
       sortBy { it.route.info.lowAddress.normalizeAddress() }
-    }.toList()
+    }.toList().also { verifyRoutes(it) }
 
     outputRoutes(result, format)
   }
 
-  private fun verifyRoutes(subnets: List<Subnet>, routes: List<Subnet>) {
-    val subnetAddrCount = subnets.map { it.info.getAddressCountLong() }.sum()
-    val routeAddrCount = routes.map { it.info.getAddressCountLong() }.sum()
+  private fun verifyRoutes(routes: List<Beeline>) {
+    val routeAddrCount = routes.map { it.route.info.getAddressCountLong() }.sum()
 
-    assert((routeAddrCount + subnetAddrCount - UInt.MAX_VALUE.toLong() - 1) == 0L) { "Invalid routes" }
+    assert((routeAddrCount - UInt.MAX_VALUE.toLong() - 1) == 0L) { "Invalid routes" }
   }
 
 

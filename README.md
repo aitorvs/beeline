@@ -63,6 +63,21 @@ Options:
   -h, --help         Show this message and exit
 ```
 
+## Install
+
+**Mac OS**
+
+```
+$ brew install aitorvs/repo/beeline
+```
+
+**Other**
+
+Download standalone JAR from
+[latest release](https://github.com/aitorvs/beeline/releases/latest).
+On MacOS and Linux you can `chmod +x` and execute the `.jar` directly.
+On Windows use `java -jar`.
+
 License
 -------
 

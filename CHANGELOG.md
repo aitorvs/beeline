@@ -1,7 +1,12 @@
 # Change Log
 
 ## [Unreleased]
-[Unreleased]: https://github.com/aitorvs/beeline/compare/0.4.0...HEAD
+[Unreleased]: https://github.com/aitorvs/beeline/compare/0.5.0...HEAD
+
+## [0.4.0] - 2021-03-07
+[0.3.1]: https://github.com/aitorvs/beeline/releases/tag/0.4.0
+
+- Fix edge cases and simplify code
 
 ## [0.3.1] - 2021-03-07
 [0.3.1]: https://github.com/aitorvs/beeline/releases/tag/0.3.1

@@ -1,4 +1,3 @@
-import Subnet.Companion.addressFromInteger
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.NoOpCliktCommand
 import com.github.ajalt.clikt.core.context
@@ -9,7 +8,8 @@ import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.rendering.TextStyles
 import com.jakewharton.picnic.TextAlignment
 import com.jakewharton.picnic.table
-import kotlin.math.log2
+import java.net.InetAddress
+import kotlin.math.max
 
 private inline fun assert(value: Boolean, lazyMessage: () -> Any) {
   if (!value) {
@@ -18,7 +18,13 @@ private inline fun assert(value: Boolean, lazyMessage: () -> Any) {
   }
 }
 
-data class Beeline(val route: Subnet, val isGap: Boolean = false)
+sealed class Route(val route: CdirAddress) {
+  override fun toString(): String {
+    return route.toString()
+  }
+  class IncludedRoute(r: CdirAddress) : Route(r)
+  class ExcludedRoute(r: CdirAddress) : Route(r)
+}
 
 class ColorHelpFormatter : CliktHelpFormatter() {
   override fun renderTag(tag: String, value: String) = TextColors.green(super.renderTag(tag, value))
@@ -51,100 +57,104 @@ class BeelineCommand: CliktCommand(help = """
   private val showGaps by option(help="Show gaps in table").flag()
 
   override fun run() {
-    val subnets = input.map { Subnet("${it.split("/")[0].trim()}/${it.split("/")[1].trim()}").apply { isInclusiveHostCount = true } }.toList()
+    val excludedAddresses = input
+      .map { CdirAddress(it) }
+      .sortedBy { it.startAddress()?.toLong() }
+      .let { mergeIntervals(it) }
+      .also { echo("$it") }
 
-    val routes = calculateSubnetRoutes(subnets)
-    val finalRoutes = mergeRoutes(subnets, routes)
-    val gaps = if (showGaps) calculateGaps(finalRoutes) else listOf()
+    val routes: List<Route> = calculateRoutes(excludedAddresses)
+      .map { Route.IncludedRoute(it) }
+      .toMutableList<Route>()
+      .apply {
+        addAll(excludedAddresses.map { Route.ExcludedRoute(it) })
+      }
+      .sortedBy { it.route.startAddress()?.toLong() }
+      .also { verifyRoutes(it) }
 
-    val beelines = finalRoutes.map { Beeline(it) }
-    val beelineGaps = gaps.map { Beeline(it, true) }
-
-    // merge routes and gaps
-    val result = beelines.toMutableList().apply {
-      addAll(beelineGaps)
-      sortBy { it.route.info.lowAddress.normalizeAddress() }
-    }.toList().also { verifyRoutes(it) }
-
-    outputRoutes(result, format)
+    outputRoutes(routes, format)
   }
 
-  private fun verifyRoutes(routes: List<Beeline>) {
-    val routeAddrCount = routes.map { it.route.info.getAddressCountLong() }.sum()
+  private fun mergeIntervals(routes: List<CdirAddress>): List<CdirAddress> {
+    if (routes.isEmpty()) return routes
+
+    val routes = routes.sortedBy { it.startAddress()?.toLong() }
+
+    val first = routes.first()
+    var start = first.startAddress()!!.toLong()
+    var end = first.endAddress()!!.toLong()
+
+    val result = mutableListOf<CdirAddress>()
+    routes.asSequence().drop(1).forEach { current ->
+      if (current.startAddress()!!.toLong() <= end) {
+        end = max(current.endAddress()!!.toLong(), end)
+      } else {
+        result.addAll(toCdirAddresses(start.toInetAddress()!!, end.toInetAddress()!!))
+        start = current.startAddress()!!.toLong()
+        end = current.endAddress()!!.toLong()
+      }
+    }
+
+    result.addAll(toCdirAddresses(start.toInetAddress()!!, end.toInetAddress()!!))
+    return result
+  }
+
+  private fun calculateRoutes(excludedAddresses: List<CdirAddress>): List<CdirAddress> {
+    val routes = mutableListOf<CdirAddress>()
+
+    var start = InetAddress.getByName("0.0.0.0")
+    excludedAddresses.sortedBy { it.startAddress()?.toLong() }.forEach { exclude ->
+//      echo("Exclude ${exclude.startAddress()?.hostAddress} ... ${exclude.endAddress()?.hostAddress}")
+
+      toCdirAddresses(start, exclude.startAddress()?.minus(1)!!).forEach { include ->
+        routes.add(include)
+      }
+
+      start = exclude.endAddress()?.plus(1)
+    }
+    val end = InetAddress.getByName("255.255.255.255")
+
+    // if the 'start' address is 0.0.0.0 it means we have a complete set already
+    if (start.toLong().toUInt() == end.toLong().toUInt() + 1u) return routes
+
+    toCdirAddresses(start, end).forEach { include ->
+      routes.add(include)
+    }
+
+    return routes
+  }
+
+  private fun verifyRoutes(routes: List<Route>) {
+    val routeAddrCount: Long = routes.sumOf { it.route.addressCount() }
 
     assert((routeAddrCount - UInt.MAX_VALUE.toLong() - 1) == 0L) { "Invalid routes $routeAddrCount != ${UInt.MAX_VALUE.toLong() - 1}" }
   }
 
-
-  private fun calculateSubnetRoutes(exclusions: List<Subnet>): List<Subnet> {
-    val routes: MutableMap<Address, Int> = mutableMapOf()
-
-    exclusions.forEach { util ->
-      val subnet = util.info.toArray()
-      echo("Calculating routes for ${util.info.cidrSignature}")
-      val baseMask = 0b10000000
-
-      for (p in 0 until util.info.cidrPrefix.toInt()) {
-        val bitIndex = p / 8
-        val prefix = p % 8
-        val flipPos = (baseMask shr prefix) and 0xFF
-        val flipMask = createBitFlipMask(prefix)
-
-
-        val result = (subnet[bitIndex] xor flipPos) and flipMask
-        val route = formatRoute(subnet, bitIndex, result, p + 1)
-
-        // check if route address already exist, if it does, take the most restrictive one, aka. the one with bigger yy
-        val yy = route.info.cidrPrefix.toInt()
-        val hit = routes[route.info.getAddress()]
-        if (hit == null || yy > hit) {
-          routes[route.info.getAddress()] = yy
-        }
-      }
-    }
-
-    return routes.toSubnet()
-  }
-
-  private fun calculateGaps(routes: List<Subnet>): List<Subnet> {
-    val gaps = mutableListOf<Subnet>()
-    routes.addZeroZeroZeroZero().map { it.info }.zipWithNext().forEach {
-      findGaps(it.first, it.second)?.let { _ ->
-        val mask = (it.first.highAddress.asInteger() + 1) xor (it.second.lowAddress.asInteger() - 1)
-        val prefix = if (mask == 0) 0 else log2(mask.toDouble()) + 1
-        val address = addressFromInteger(it.first.highAddress.asInteger() + 1)
-        gaps.add(Subnet("${address.value}/${32-prefix.toInt()}"))
-      }
-    }
-
-    return gaps
-  }
-
-  private fun outputRoutes(finalRoutes: List<Beeline>, format: String?) {
+  private fun outputRoutes(finalRoutes: List<Route>, format: String?) {
     if (format == null) outputTableRoutes(finalRoutes)
     else outputCodeRoutes(finalRoutes, format)
   }
 
-  private fun outputCodeRoutes(routes: List<Beeline>, format: String) {
+  private fun outputCodeRoutes(routes: List<Route>, format: String) {
     println()
 
     routes.forEach {
-      if (it.isGap) {
+      if (it is Route.ExcludedRoute) {
         println("""
-            // Excluded range: ${it.route.info.lowAddress} -> ${it.route.info.highAddress}
+            // Excluded range: ${it.route.startAddress()?.hostAddress} -> ${it.route.endAddress()?.hostAddress}
           """.trimIndent())
       } else {
 
-        val templated = format.replace("%cidr", it.route.info.cidrAddress)
-          .replace("%prefix", it.route.info.cidrPrefix)
-          .replace("%lowAddr", it.route.info.lowAddress.value)
-          .replace("%highAddr", it.route.info.highAddress.value)
+        val templated = format.replace("%cidr", it.route.cdir)
+          .replace("%prefix", it.route.prefix().toString())
+          .replace("%lowAddr", it.route.startAddress()!!.hostAddress)
+          .replace("%highAddr", it.route.endAddress()!!.hostAddress)
         println(templated)
       }
     }
   }
 
-  private fun outputTableRoutes(routes: List<Beeline>) {
+  private fun outputTableRoutes(routes: List<Route>) {
     println()
 
     println(
@@ -158,50 +168,19 @@ class BeelineCommand: CliktCommand(help = """
         row(TextStyles.bold("CIDR"), TextStyles.bold("Low Address"), TextStyles.bold("High Address"))
         routes.forEach {
 
-          if (it.isGap) {
+          if (it is Route.ExcludedRoute) {
             row {
-              cell(TextColors.red("${it.route.info.lowAddress.value} -> ${it.route.info.highAddress.value}")) {
+              cell(TextColors.red("${it.route.startAddress()?.hostAddress} -> ${it.route.endAddress()?.hostAddress}")) {
                 alignment = TextAlignment.MiddleCenter
                 columnSpan = 3
               }
             }
           } else {
-            row(it.route.info.cidrSignature, it.route.info.lowAddress.value, it.route.info.highAddress.value)
+            row(it.route.cdir, it.route.startAddress()?.hostAddress, it.route.endAddress()?.hostAddress)
           }
         }
       }
     )
-  }
-
-  private fun findGaps(first: Subnet.SubnetInfo, second: Subnet.SubnetInfo): Pair<Address, Address>? {
-    val highestFromCurrentRoute = first.highAddress.asInteger()
-    val expectedNextAddress = highestFromCurrentRoute + 1
-    val lowestFromNextRoute = second.lowAddress.asInteger()
-
-    if (lowestFromNextRoute != expectedNextAddress) {
-      return addressFromInteger(expectedNextAddress) to addressFromInteger(lowestFromNextRoute - 1)
-    }
-
-    return null
-  }
-
-  private fun mergeRoutes(subnets: List<Subnet>, routes: List<Subnet>): List<Subnet> {
-    println()
-    println("Verifying routes...")
-
-    if (subnets.isEmpty()) return routes
-
-    val removals: MutableList<Subnet> = mutableListOf()
-    for (subnet in subnets) {
-      for (route in routes) {
-        if (subnet.info.overlaps(route.info)) {
-          println("Subnet ${subnet.info.cidrSignature} found route ${route.info.cidrSignature}...removing route")
-          removals.add(route)
-        }
-      }
-    }
-
-    return routes.toMutableList().apply { removeAll(removals) }
   }
 }
 
@@ -225,21 +204,5 @@ private fun createBitFlipMask(prefix: Int): Int {
   }
 
   return base
-}
-
-private fun formatRoute(octets: IntArray, index: Int, result: Int, prefixLength: Int): Subnet {
-  val subnet = StringBuilder()
-
-  octets.forEachIndexed{ i, value ->
-    when {
-      i == index -> subnet.append(result.toString())
-      i < index -> subnet.append(value)
-      else -> subnet.append(0)
-    }
-    if (i != octets.size - 1) {
-      subnet.append(".")
-    }
-  }
-  return Subnet("$subnet/$prefixLength")
 }
 

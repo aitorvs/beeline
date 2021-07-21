@@ -22,33 +22,33 @@ import kotlin.math.ln
 import kotlin.math.pow
 
 
-inline class CdirAddress(val cdir: String) {
+inline class CidrAddress(val cdir: String) {
   override fun toString(): String {
     return "$cdir (${this.startAddress()?.hostAddress}...${this.endAddress()?.hostAddress})"
   }
 }
 
-internal fun CdirAddress.addressCount(): Long {
+internal fun CidrAddress.addressCount(): Long {
   return inet2long(endAddress()) - inet2long(startAddress()) + 1
 }
 
-private fun CdirAddress.inetAddress(): InetAddress {
+private fun CidrAddress.inetAddress(): InetAddress {
   return InetAddress.getByName(cdir.substringBefore("/"))
 }
 
-internal fun CdirAddress.prefix(): Int {
+internal fun CidrAddress.prefix(): Int {
   return cdir.substringAfter("/").toInt()
 }
 
-internal fun CdirAddress.startAddress(): InetAddress? {
+internal fun CidrAddress.startAddress(): InetAddress? {
   return long2inet(inet2long(this.inetAddress()) and prefix2mask(this.prefix()))
 }
 
-internal fun CdirAddress.endAddress(): InetAddress? {
+internal fun CidrAddress.endAddress(): InetAddress? {
   return long2inet((inet2long(this.inetAddress()) and prefix2mask(this.prefix())) + (1L shl(32 - this.prefix())) - 1)
 }
 
-internal fun CdirAddress.merge(other: CdirAddress): List<CdirAddress> {
+internal fun CidrAddress.merge(other: CidrAddress): List<CidrAddress> {
   val end = this.endAddress()!!.toLong().coerceAtLeast(other.endAddress()!!.toLong()).toInetAddress()!!
   return toCdirAddresses(this.startAddress()!!, end)
 }
@@ -84,8 +84,8 @@ private fun inet2long(addr: InetAddress?): Long {
 }
 
 
-fun toCdirAddresses(start: InetAddress, end: InetAddress): List<CdirAddress> {
-  val listResult: MutableList<CdirAddress> = ArrayList()
+fun toCdirAddresses(start: InetAddress, end: InetAddress): List<CidrAddress> {
+  val listResult: MutableList<CidrAddress> = ArrayList()
 //  echo("toCdirAddress(" + start.hostAddress + "," + end.hostAddress + ")")
 
   var from = inet2long(start)
@@ -100,7 +100,7 @@ fun toCdirAddresses(start: InetAddress, end: InetAddress): List<CdirAddress> {
     }
     val max = (32 - floor(ln((to - from + 1).toDouble()) / ln(2.0))).toByte()
     if (prefix < max) prefix = max
-    listResult.add(CdirAddress("${long2inet(from)?.hostAddress}/$prefix"))
+    listResult.add(CidrAddress("${long2inet(from)?.hostAddress}/$prefix"))
     from += 2.0.pow((32 - prefix).toDouble()).toLong()
   }
 

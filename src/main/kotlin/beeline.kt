@@ -18,12 +18,12 @@ private inline fun assert(value: Boolean, lazyMessage: () -> Any) {
   }
 }
 
-sealed class Route(val route: CdirAddress) {
+sealed class Route(val route: CidrAddress) {
   override fun toString(): String {
     return route.toString()
   }
-  class IncludedRoute(r: CdirAddress) : Route(r)
-  class ExcludedRoute(r: CdirAddress) : Route(r)
+  class IncludedRoute(r: CidrAddress) : Route(r)
+  class ExcludedRoute(r: CidrAddress) : Route(r)
 }
 
 class ColorHelpFormatter : CliktHelpFormatter() {
@@ -58,7 +58,7 @@ class BeelineCommand: CliktCommand(help = """
 
   override fun run() {
     val excludedAddresses = input
-      .map { CdirAddress(it) }
+      .map { CidrAddress(it) }
       .sortedBy { it.startAddress()?.toLong() }
       .let { mergeIntervals(it) }
       .also { echo("$it") }
@@ -75,7 +75,7 @@ class BeelineCommand: CliktCommand(help = """
     outputRoutes(routes, format)
   }
 
-  private fun mergeIntervals(routes: List<CdirAddress>): List<CdirAddress> {
+  private fun mergeIntervals(routes: List<CidrAddress>): List<CidrAddress> {
     if (routes.isEmpty()) return routes
 
     val routes = routes.sortedBy { it.startAddress()?.toLong() }
@@ -84,7 +84,7 @@ class BeelineCommand: CliktCommand(help = """
     var start = first.startAddress()!!.toLong()
     var end = first.endAddress()!!.toLong()
 
-    val result = mutableListOf<CdirAddress>()
+    val result = mutableListOf<CidrAddress>()
     routes.asSequence().drop(1).forEach { current ->
       if (current.startAddress()!!.toLong() <= end) {
         end = max(current.endAddress()!!.toLong(), end)
@@ -99,8 +99,8 @@ class BeelineCommand: CliktCommand(help = """
     return result
   }
 
-  private fun calculateRoutes(excludedAddresses: List<CdirAddress>): List<CdirAddress> {
-    val routes = mutableListOf<CdirAddress>()
+  private fun calculateRoutes(excludedAddresses: List<CidrAddress>): List<CidrAddress> {
+    val routes = mutableListOf<CidrAddress>()
 
     var start = InetAddress.getByName("0.0.0.0")
     excludedAddresses.sortedBy { it.startAddress()?.toLong() }.forEach { exclude ->
